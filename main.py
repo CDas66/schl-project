@@ -1267,18 +1267,685 @@ Please remind the member to return the book on time.
         self.stats_label.configure(text=stats_text)
     
     def show_issues(self):
-        """Show active issues"""
+        """Show active issues list with management features"""
         self.clear_content()
         
         title = ctk.CTkLabel(
             self.content_frame, 
-            text="Active Issues", 
+            text="Active Issues Management", 
             font=ctk.CTkFont(size=24, weight="bold")
         )
         title.pack(pady=20)
         
-        # Active issues list implementation
-        # ... (code for issues list)
+        # Statistics frame
+        stats_frame = ctk.CTkFrame(self.content_frame)
+        stats_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Stats will be updated after loading data
+        self.stats_cards_frame = ctk.CTkFrame(stats_frame)
+        self.stats_cards_frame.pack(fill="x", padx=10, pady=10)
+        
+        # Controls frame
+        controls_frame = ctk.CTkFrame(self.content_frame)
+        controls_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Left side - Search and filters
+        left_controls = ctk.CTkFrame(controls_frame)
+        left_controls.pack(side="left", fill="x", expand=True)
+        
+        search_frame = ctk.CTkFrame(left_controls)
+        search_frame.pack(fill="x", pady=5)
+        
+        ctk.CTkLabel(search_frame, text="Search:").pack(side="left", padx=(0, 10))
+        self.issues_search_entry = ctk.CTkEntry(
+            search_frame, 
+            placeholder_text="Search by member, book, issue ID...",
+            width=300
+        )
+        self.issues_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        self.issues_search_entry.bind('<KeyRelease>', self.search_issues)
+        
+        ctk.CTkButton(
+            search_frame, 
+            text="Clear", 
+            command=self.clear_issues_search,
+            width=80
+        ).pack(side="right", padx=(0, 10))
+        
+        # Filter frame
+        filter_frame = ctk.CTkFrame(left_controls)
+        filter_frame.pack(fill="x", pady=5)
+        
+        ctk.CTkLabel(filter_frame, text="Filter by:").pack(side="left", padx=(0, 10))
+        
+        self.filter_var = ctk.StringVar(value="all")
+        ctk.CTkRadioButton(filter_frame, text="All", variable=self.filter_var, value="all", command=self.apply_issues_filter).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(filter_frame, text="Overdue", variable=self.filter_var, value="overdue", command=self.apply_issues_filter).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(filter_frame, text="Due Soon", variable=self.filter_var, value="due_soon", command=self.apply_issues_filter).pack(side="left", padx=(0, 10))
+        ctk.CTkRadioButton(filter_frame, text="On Time", variable=self.filter_var, value="on_time", command=self.apply_issues_filter).pack(side="left")
+        
+        # Right side - Actions and export
+        right_controls = ctk.CTkFrame(controls_frame)
+        right_controls.pack(side="right", fill="y")
+        
+        action_frame = ctk.CTkFrame(right_controls)
+        action_frame.pack(fill="y", pady=5)
+        
+        ctk.CTkButton(
+            action_frame,
+            text="Refresh",
+            command=self.load_issues_data,
+            width=100
+        ).pack(pady=2)
+        
+        ctk.CTkButton(
+            action_frame,
+            text="Export to CSV",
+            command=self.export_issues_to_csv,
+            fg_color="#1976D2",
+            width=100
+        ).pack(pady=2)
+        
+        ctk.CTkButton(
+            action_frame,
+            text="Print Report",
+            command=self.print_issues_report,
+            fg_color="#388E3C",
+            width=100
+        ).pack(pady=2)
+        
+        # Main issues table frame
+        table_frame = ctk.CTkFrame(self.content_frame)
+        table_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Treeview with scrollbars
+        tree_container = ctk.CTkFrame(table_frame)
+        tree_container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Create treeview
+        columns = (
+            "Issue ID", "Book Title", "Member Name", "Issue Date", 
+            "Due Date", "Days Left", "Status", "Member Phone", "Member Email"
+        )
+        
+        self.issues_tree = ttk.Treeview(tree_container, columns=columns, show="headings", height=20)
+        
+        # Configure columns
+        column_config = {
+            "Issue ID": 80, "Book Title": 250, "Member Name": 150, 
+            "Issue Date": 100, "Due Date": 100, "Days Left": 80, 
+            "Status": 100, "Member Phone": 120, "Member Email": 200
+        }
+        
+        for col in columns:
+            self.issues_tree.heading(col, text=col)
+            self.issues_tree.column(col, width=column_config.get(col, 100))
+        
+        # Scrollbars
+        v_scrollbar = ttk.Scrollbar(tree_container, orient="vertical", command=self.issues_tree.yview)
+        h_scrollbar = ttk.Scrollbar(tree_container, orient="horizontal", command=self.issues_tree.xview)
+        self.issues_tree.configure(yscrollcommand=v_scrollbar.set, xscrollcommand=h_scrollbar.set)
+        
+        # Grid layout for treeview and scrollbars
+        self.issues_tree.grid(row=0, column=0, sticky="nsew")
+        v_scrollbar.grid(row=0, column=1, sticky="ns")
+        h_scrollbar.grid(row=1, column=0, sticky="ew")
+        
+        tree_container.grid_rowconfigure(0, weight=1)
+        tree_container.grid_columnconfigure(0, weight=1)
+        
+        # Action buttons for selected issue
+        action_buttons_frame = ctk.CTkFrame(table_frame)
+        action_buttons_frame.pack(fill="x", padx=10, pady=10)
+        
+        self.view_details_btn = ctk.CTkButton(
+            action_buttons_frame,
+            text="View Details",
+            command=self.view_issue_details,
+            state="disabled",
+            width=120
+        )
+        self.view_details_btn.pack(side="left", padx=5)
+        
+        self.return_btn_issues = ctk.CTkButton(
+            action_buttons_frame,
+            text="Return Book",
+            command=self.return_from_issues,
+            state="disabled",
+            fg_color="#2E7D32",
+            hover_color="#1B5E20",
+            width=120
+        )
+        self.return_btn_issues.pack(side="left", padx=5)
+        
+        self.extend_btn = ctk.CTkButton(
+            action_buttons_frame,
+            text="Extend Due Date",
+            command=self.extend_due_date,
+            state="disabled",
+            fg_color="#FF9800",
+            hover_color="#F57C00",
+            width=120
+        )
+        self.extend_btn.pack(side="left", padx=5)
+        
+        self.send_reminder_btn = ctk.CTkButton(
+            action_buttons_frame,
+            text="Send Reminder",
+            command=self.send_reminder,
+            state="disabled",
+            fg_color="#2196F3",
+            hover_color="#1976D2",
+            width=120
+        )
+        self.send_reminder_btn.pack(side="left", padx=5)
+        
+        # Bind selection event
+        self.issues_tree.bind('<<TreeviewSelect>>', self.on_issues_tree_select)
+        
+        # Double-click to view details
+        self.issues_tree.bind('<Double-1>', lambda e: self.view_issue_details())
+        
+        # Initialize
+        self.all_issues_data = []
+        self.filtered_issues_data = []
+        self.selected_issue_data = None
+        self.load_issues_data()
+    
+    def load_issues_data(self):
+        """Load all issues data"""
+        issues = self.db.get_all_issues_with_details()
+        self.all_issues_data = issues
+        self.filtered_issues_data = issues.copy()
+        self.update_issues_treeview()
+        self.update_issues_stats()
+    
+    def update_issues_treeview(self):
+        """Update issues treeview with current data"""
+        # Clear existing items
+        for item in self.issues_tree.get_children():
+            self.issues_tree.delete(item)
+        
+        from datetime import datetime
+        
+        for issue in self.filtered_issues_data:
+            (
+                issue_id, book_title, member_name, issue_date, due_date,
+                return_date, status, member_phone, member_email
+            ) = issue
+            
+            # Calculate days left/overdue
+            due_datetime = datetime.strptime(due_date, "%Y-%m-%d %H:%M:%S")
+            today = datetime.now()
+            days_difference = (due_datetime - today).days
+            
+            if days_difference < 0:
+                days_left = f"Overdue ({abs(days_difference)}d)"
+                status_display = "Overdue"
+                tags = ('overdue',)
+            elif days_difference <= 3:
+                days_left = f"Due soon ({days_difference}d)"
+                status_display = "Due Soon"
+                tags = ('due_soon',)
+            else:
+                days_left = f"{days_difference}d"
+                status_display = "On Time"
+                tags = ('on_time',)
+            
+            # Format dates
+            issue_date_display = issue_date.split()[0] if issue_date else "N/A"
+            due_date_display = due_date.split()[0] if due_date else "N/A"
+            
+            values = (
+                issue_id, book_title, member_name, issue_date_display,
+                due_date_display, days_left, status_display, member_phone, member_email
+            )
+            
+            self.issues_tree.insert("", "end", values=values, tags=tags)
+        
+        # Configure tags for styling
+        self.issues_tree.tag_configure('overdue', background='#ffebee', foreground='#c62828')
+        self.issues_tree.tag_configure('due_soon', background='#fff3e0', foreground='#ef6c00')
+        self.issues_tree.tag_configure('on_time', background='#e8f5e8', foreground='#2e7d32')
+    
+    def update_issues_stats(self):
+        """Update statistics cards"""
+        # Clear existing stats cards
+        for widget in self.stats_cards_frame.winfo_children():
+            widget.destroy()
+        
+        from datetime import datetime
+        
+        total_issues = len(self.all_issues_data)
+        overdue_count = 0
+        due_soon_count = 0
+        on_time_count = 0
+        
+        for issue in self.all_issues_data:
+            due_date = issue[4]  # due_date is at index 4
+            due_datetime = datetime.strptime(due_date, "%Y-%m-%d %H:%M:%S")
+            today = datetime.now()
+            days_difference = (due_datetime - today).days
+            
+            if days_difference < 0:
+                overdue_count += 1
+            elif days_difference <= 3:
+                due_soon_count += 1
+            else:
+                on_time_count += 1
+        
+        # Create stats cards
+        stats_data = [
+            ("Total Active", total_issues, "#2196F3"),
+            ("Overdue", overdue_count, "#F44336"),
+            ("Due Soon", due_soon_count, "#FF9800"),
+            ("On Time", on_time_count, "#4CAF50"),
+        ]
+        
+        for i, (label, value, color) in enumerate(stats_data):
+            card = ctk.CTkFrame(self.stats_cards_frame, fg_color=color, corner_radius=10)
+            card.grid(row=0, column=i, padx=5, pady=5, sticky="ew")
+            self.stats_cards_frame.columnconfigure(i, weight=1)
+            
+            ctk.CTkLabel(
+                card, 
+                text=label, 
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color="white"
+            ).pack(pady=(8, 2))
+            
+            ctk.CTkLabel(
+                card, 
+                text=str(value), 
+                font=ctk.CTkFont(size=24, weight="bold"),
+                text_color="white"
+            ).pack(pady=(2, 8))
+    
+    def search_issues(self, event=None):
+        """Search issues based on search term"""
+        search_term = self.issues_search_entry.get().lower()
+        if not search_term:
+            self.filtered_issues_data = self.all_issues_data.copy()
+        else:
+            self.filtered_issues_data = [
+                issue for issue in self.all_issues_data 
+                if (search_term in str(issue[0]).lower() or      # issue_id
+                    search_term in issue[1].lower() or           # book_title
+                    search_term in issue[2].lower() or           # member_name
+                    search_term in str(issue[7]).lower() or      # member_phone
+                    search_term in issue[8].lower())             # member_email
+            ]
+        
+        self.apply_issues_filter()
+    
+    def apply_issues_filter(self):
+        """Apply current filter to displayed issues"""
+        filter_type = self.filter_var.get()
+        
+        if filter_type == "all":
+            filtered_data = self.filtered_issues_data
+        else:
+            from datetime import datetime
+            
+            filtered_data = []
+            for issue in self.filtered_issues_data:
+                due_date = issue[4]  # due_date is at index 4
+                due_datetime = datetime.strptime(due_date, "%Y-%m-%d %H:%M:%S")
+                today = datetime.now()
+                days_difference = (due_datetime - today).days
+                
+                if (filter_type == "overdue" and days_difference < 0 or
+                    filter_type == "due_soon" and 0 <= days_difference <= 3 or
+                    filter_type == "on_time" and days_difference > 3):
+                    filtered_data.append(issue)
+        
+        # Update treeview with filtered data
+        for item in self.issues_tree.get_children():
+            self.issues_tree.delete(item)
+        
+        for issue in filtered_data:
+            # Same insertion logic as update_issues_treeview
+            (
+                issue_id, book_title, member_name, issue_date, due_date,
+                return_date, status, member_phone, member_email
+            ) = issue
+            
+            due_datetime = datetime.strptime(due_date, "%Y-%m-%d %H:%M:%S")
+            today = datetime.now()
+            days_difference = (due_datetime - today).days
+            
+            if days_difference < 0:
+                days_left = f"Overdue ({abs(days_difference)}d)"
+                status_display = "Overdue"
+                tags = ('overdue',)
+            elif days_difference <= 3:
+                days_left = f"Due soon ({days_difference}d)"
+                status_display = "Due Soon"
+                tags = ('due_soon',)
+            else:
+                days_left = f"{days_difference}d"
+                status_display = "On Time"
+                tags = ('on_time',)
+            
+            issue_date_display = issue_date.split()[0] if issue_date else "N/A"
+            due_date_display = due_date.split()[0] if due_date else "N/A"
+            
+            values = (
+                issue_id, book_title, member_name, issue_date_display,
+                due_date_display, days_left, status_display, member_phone, member_email
+            )
+            
+            self.issues_tree.insert("", "end", values=values, tags=tags)
+    
+    def clear_issues_search(self):
+        """Clear search and filters"""
+        self.issues_search_entry.delete(0, 'end')
+        self.filter_var.set("all")
+        self.load_issues_data()
+    
+    def on_issues_tree_select(self, event):
+        """Handle issue selection in treeview"""
+        selection = self.issues_tree.selection()
+        if selection:
+            item = selection[0]
+            issue_values = self.issues_tree.item(item, 'values')
+            issue_id = issue_values[0]
+            
+            # Find the complete issue data
+            self.selected_issue_data = None
+            for issue in self.all_issues_data:
+                if issue[0] == issue_id:
+                    self.selected_issue_data = issue
+                    break
+            
+            # Enable action buttons
+            self.view_details_btn.configure(state="normal")
+            self.return_btn_issues.configure(state="normal")
+            self.extend_btn.configure(state="normal")
+            self.send_reminder_btn.configure(state="normal")
+        else:
+            self.selected_issue_data = None
+            self.view_details_btn.configure(state="disabled")
+            self.return_btn_issues.configure(state="disabled")
+            self.extend_btn.configure(state="disabled")
+            self.send_reminder_btn.configure(state="disabled")
+    
+    def view_issue_details(self):
+        """Show detailed view of selected issue"""
+        if not self.selected_issue_data:
+            return
+        
+        # Create details window
+        details_window = ctk.CTkToplevel(self.root)
+        details_window.title("Issue Details")
+        details_window.geometry("500x400")
+        details_window.transient(self.root)
+        details_window.grab_set()
+        
+        # Center the window
+        details_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - details_window.winfo_width()) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - details_window.winfo_height()) // 2
+        details_window.geometry(f"+{x}+{y}")
+        
+        issue_data = self.selected_issue_data
+        
+        # Main frame
+        main_frame = ctk.CTkFrame(details_window)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        ctk.CTkLabel(
+            main_frame, 
+            text="Issue Details", 
+            font=ctk.CTkFont(size=20, weight="bold")
+        ).pack(pady=(0, 20))
+        
+        # Details text
+        details_text = ctk.CTkTextbox(main_frame, height=250)
+        details_text.pack(fill="both", expand=True, pady=(0, 20))
+        
+        # Format details
+        from datetime import datetime
+        
+        issue_id, book_title, member_name, issue_date, due_date, return_date, status, member_phone, member_email = issue_data
+        
+        due_datetime = datetime.strptime(due_date, "%Y-%m-%d %H:%M:%S")
+        today = datetime.now()
+        days_difference = (due_datetime - today).days
+        
+        details = f"""
+📋 ISSUE DETAILS
+────────────────────────
+🆔 Issue ID: {issue_id}
+📚 Book: {book_title}
+👤 Member: {member_name}
+
+📞 Phone: {member_phone}
+📧 Email: {member_email}
+
+📅 Issue Date: {issue_date.split()[0]}
+⏰ Due Date: {due_date.split()[0]}
+{"📅 Return Date: " + return_date.split()[0] if return_date else "🔄 Status: Currently Issued"}
+
+📊 Current Status: {"Overdue" if days_difference < 0 else "Due Soon" if days_difference <= 3 else "On Time"}
+⏱️  Days {'Overdue' if days_difference < 0 else 'Remaining'}: {abs(days_difference)}
+"""
+        
+        details_text.insert("1.0", details)
+        details_text.configure(state="disabled")
+        
+        # Close button
+        ctk.CTkButton(
+            main_frame,
+            text="Close",
+            command=details_window.destroy
+        ).pack()
+    
+    def return_from_issues(self):
+        """Return book directly from issues list"""
+        if not self.selected_issue_data:
+            return
+        
+        # Use the same return logic as in return section
+        issue_id = self.selected_issue_data[0]
+        book_title = self.selected_issue_data[1]
+        member_name = self.selected_issue_data[2]
+        
+        confirm = messagebox.askyesno(
+            "Confirm Return", 
+            f"Return book '{book_title}' from member '{member_name}'?"
+        )
+        
+        if confirm:
+            success = self.db.return_book(issue_id)
+            if success:
+                messagebox.showinfo("Success", "Book returned successfully!")
+                self.load_issues_data()
+            else:
+                messagebox.showerror("Error", "Failed to return book")
+    
+    def extend_due_date(self):
+        """Extend due date for selected issue"""
+        if not self.selected_issue_data:
+            return
+        
+        # Create extension window
+        extend_window = ctk.CTkToplevel(self.root)
+        extend_window.title("Extend Due Date")
+        extend_window.geometry("400x300")
+        extend_window.transient(self.root)
+        extend_window.grab_set()
+        
+        # Center the window
+        extend_window.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() - extend_window.winfo_width()) // 2
+        y = self.root.winfo_y() + (self.root.winfo_height() - extend_window.winfo_height()) // 2
+        extend_window.geometry(f"+{x}+{y}")
+        
+        issue_data = self.selected_issue_data
+        issue_id, book_title, member_name, issue_date, due_date, return_date, status, member_phone, member_email = issue_data
+        
+        main_frame = ctk.CTkFrame(extend_window)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        ctk.CTkLabel(
+            main_frame, 
+            text="Extend Due Date", 
+            font=ctk.CTkFont(size=18, weight="bold")
+        ).pack(pady=(0, 10))
+        
+        # Current due date
+        ctk.CTkLabel(
+            main_frame, 
+            text=f"Current Due Date: {due_date.split()[0]}",
+            font=ctk.CTkFont(size=14)
+        ).pack(pady=5)
+        
+        ctk.CTkLabel(
+            main_frame, 
+            text=f"Book: {book_title}\nMember: {member_name}",
+            font=ctk.CTkFont(size=12)
+        ).pack(pady=10)
+        
+        # Extension options
+        ctk.CTkLabel(main_frame, text="Extend by:").pack(pady=(20, 10))
+        
+        self.extension_days = ctk.StringVar(value="7")
+        days_frame = ctk.CTkFrame(main_frame)
+        days_frame.pack(pady=10)
+        
+        for days in ["7", "14", "21", "30"]:
+            ctk.CTkRadioButton(
+                days_frame, 
+                text=f"{days} days", 
+                variable=self.extension_days, 
+                value=days
+            ).pack(side="left", padx=5)
+        
+        # Custom days
+        custom_frame = ctk.CTkFrame(main_frame)
+        custom_frame.pack(pady=10)
+        
+        ctk.CTkLabel(custom_frame, text="Custom:").pack(side="left", padx=(0, 10))
+        self.custom_extension = ctk.CTkEntry(custom_frame, width=60, placeholder_text="Days")
+        self.custom_extension.pack(side="left")
+        
+        # Buttons
+        button_frame = ctk.CTkFrame(main_frame)
+        button_frame.pack(pady=20)
+        
+        ctk.CTkButton(
+            button_frame,
+            text="Extend",
+            command=lambda: self.process_extension(extend_window),
+            fg_color="#FF9800"
+        ).pack(side="left", padx=5)
+        
+        ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=extend_window.destroy
+        ).pack(side="left", padx=5)
+    
+    def process_extension(self, window):
+        """Process due date extension"""
+        try:
+            # Get extension days
+            if self.custom_extension.get():
+                days = int(self.custom_extension.get())
+            else:
+                days = int(self.extension_days.get())
+            
+            if days <= 0:
+                messagebox.showerror("Error", "Please enter positive number of days")
+                return
+            
+            # Update in database
+            success = self.db.extend_due_date(self.selected_issue_data[0], days)
+            
+            if success:
+                messagebox.showinfo("Success", f"Due date extended by {days} days")
+                window.destroy()
+                self.load_issues_data()
+            else:
+                messagebox.showerror("Error", "Failed to extend due date")
+                
+        except ValueError:
+            messagebox.showerror("Error", "Please enter valid number of days")
+    
+    def send_reminder(self):
+        """Send reminder for selected issue"""
+        if not self.selected_issue_data:
+            return
+        
+        issue_data = self.selected_issue_data
+        issue_id, book_title, member_name, issue_date, due_date, return_date, status, member_phone, member_email = issue_data
+        
+        from datetime import datetime
+        due_datetime = datetime.strptime(due_date, "%Y-%m-%d %H:%M:%S")
+        today = datetime.now()
+        days_difference = (due_datetime - today).days
+        
+        reminder_type = "overdue" if days_difference < 0 else "due_soon"
+        
+        # Simulate sending reminder
+        if reminder_type == "overdue":
+            message = f"Reminder sent to {member_name} for overdue book: {book_title}"
+        else:
+            message = f"Reminder sent to {member_name} for book due soon: {book_title}"
+        
+        messagebox.showinfo("Reminder Sent", f"{message}\n\n(Simulation - in real system this would send email/SMS)")
+    
+    def export_issues_to_csv(self):
+        """Export issues data to CSV"""
+        try:
+            from datetime import datetime
+            import csv
+            
+            filename = f"library_issues_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                
+                # Write header
+                writer.writerow([
+                    'Issue ID', 'Book Title', 'Member Name', 'Issue Date', 
+                    'Due Date', 'Days Status', 'Member Phone', 'Member Email'
+                ])
+                
+                # Write data
+                for issue in self.all_issues_data:
+                    issue_id, book_title, member_name, issue_date, due_date, return_date, status, member_phone, member_email = issue
+                    
+                    due_datetime = datetime.strptime(due_date, "%Y-%m-%d %H:%M:%S")
+                    today = datetime.now()
+                    days_difference = (due_datetime - today).days
+                    
+                    if days_difference < 0:
+                        days_status = f"Overdue ({abs(days_difference)} days)"
+                    elif days_difference <= 3:
+                        days_status = f"Due in {days_difference} days"
+                    else:
+                        days_status = f"Due in {days_difference} days"
+                    
+                    writer.writerow([
+                        issue_id, book_title, member_name, issue_date.split()[0],
+                        due_date.split()[0], days_status, member_phone, member_email
+                    ])
+            
+            messagebox.showinfo("Export Successful", f"Issues data exported to:\n{filename}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"Failed to export data: {str(e)}")
+    
+    def print_issues_report(self):
+        """Print issues report (simulated)"""
+        total_issues = len(self.all_issues_data)
+        messagebox.showinfo(
+            "Print Report", 
+            f"Printing report for {total_issues} active issues...\n\n"
+            f"(Simulation - in real system this would generate a printable report)"
+        )
 
     def run(self):
         """Start the application"""
